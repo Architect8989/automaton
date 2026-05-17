@@ -78,18 +78,18 @@ export interface AutomatonConfig {
 }
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
-  conwayApiUrl: "https://api.conway.tech",
-  inferenceModel: "gpt-5.2",
+  conwayApiUrl: "https://inference.do-ai.run/v1",
+  inferenceModel: "deepseek-v4-pro",
   maxTokensPerTurn: 4096,
   heartbeatConfigPath: "~/.automaton/heartbeat.yml",
   dbPath: "~/.automaton/state.db",
   logLevel: "info",
-  version: "0.2.1",
+  version: "0.3.0-sovereign",
   skillsDir: "~/.automaton/skills",
   maxChildren: 3,
   maxTurnsPerCycle: 25,
   childSandboxMemoryMb: 1024,
-  socialRelayUrl: "https://social.conway.tech",
+  socialRelayUrl: "",
 };
 
 // ─── Agent State ─────────────────────────────────────────────────
@@ -226,7 +226,7 @@ export interface FinancialState {
   lastChecked: string;
 }
 
-export type SurvivalTier = "dead" | "critical" | "low_compute" | "normal" | "high";
+export type SurvivalTier = "dead" | "infant" | "critical" | "low_compute" | "normal" | "high";
 
 export const SURVIVAL_THRESHOLDS = {
   high: 500, // > $5.00 in cents

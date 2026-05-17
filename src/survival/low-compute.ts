@@ -110,6 +110,9 @@ export function getModelForTier(
     case "critical":
       return "gpt-5-mini";
     case "dead":
-      return "gpt-5-mini"; // Won't be used, but just in case
+    case "infant":
+      return "deepseek-v4-pro"; // Minimal tier — use DO Inference
+    default:
+      return defaultModel;
   }
 }

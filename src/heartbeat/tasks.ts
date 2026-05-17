@@ -709,10 +709,11 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
 function tierToInt(tier: SurvivalTier): number {
   const map: Record<SurvivalTier, number> = {
     dead: 0,
-    critical: 1,
-    low_compute: 2,
-    normal: 3,
-    high: 4,
+    infant: 1,
+    critical: 2,
+    low_compute: 3,
+    normal: 4,
+    high: 5,
   };
   return map[tier] ?? 0;
 }

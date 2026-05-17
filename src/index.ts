@@ -33,12 +33,11 @@ import type { AutomatonIdentity, AgentState, Skill, SocialClientInterface } from
 import { DEFAULT_TREASURY_POLICY } from "./types.js";
 import { createLogger, setGlobalLogLevel, StructuredLogger } from "./observability/logger.js";
 import { prettySink } from "./observability/pretty-sink.js";
-import { bootstrapTopup } from "./conway/topup.js";
 import { randomUUID } from "crypto";
 import { keccak256, toHex } from "viem";
 
 const logger = createLogger("main");
-const VERSION = "0.2.1";
+const VERSION = "0.3.0-sovereign";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -61,14 +60,16 @@ Usage:
   automaton --configure    Edit configuration (providers, model, treasury, general)
   automaton --pick-model   Interactively pick the active inference model
   automaton --init         Initialize wallet and config directory
-  automaton --provision    Provision Conway API key via SIWE
   automaton --status       Show current automaton status
   automaton --version      Show version
   automaton --help         Show this help
 
 Environment:
-  CONWAY_API_URL           Conway API URL (default: https://api.conway.tech)
-  CONWAY_API_KEY           Conway API key (overrides config)
+  DO_API_KEY               DigitalOcean Inference API key (sovereign mode)
+  DO_BASE_URL              DO Inference base URL (default: https://inference.do-ai.run/v1)
+  DO_INFERENCE_MODEL       Model name to use (default: deepseek-v4-pro)
+  CONWAY_API_URL           API base URL (default: DO Inference)
+  CONWAY_API_KEY           API key (falls back to DO_API_KEY)
   OLLAMA_BASE_URL          Ollama base URL (overrides config, e.g. http://localhost:11434)
 `);
     process.exit(0);
@@ -245,49 +246,33 @@ async function run(): Promise<void> {
     sandboxId: config.sandboxId,
   });
 
-  // Register automaton identity (one-time, immutable)
+  // Sovereign mode: register automaton identity locally (no Conway Cloud)
+  if (!storedAutomatonId) {
+    db.setIdentity("automatonId", automatonId);
+  }
   const registrationState = db.getIdentity("conwayRegistrationStatus");
   if (registrationState !== "registered") {
-    try {
-      const genesisPromptHash = config.genesisPrompt
-        ? keccak256(toHex(config.genesisPrompt))
-        : undefined;
-      await conway.registerAutomaton({
-        automatonId,
-        automatonAddress: chainIdentity.address,
-        creatorAddress: config.creatorAddress,
-        name: config.name,
-        bio: config.creatorMessage || "",
-        genesisPromptHash,
-        account,
-        chainType: resolvedChainType,
-        chainIdentity,
-      });
-      db.setIdentity("conwayRegistrationStatus", "registered");
-      logger.info(`[${new Date().toISOString()}] Automaton identity registered.`);
-    } catch (err: any) {
-      const status = err?.status;
-      if (status === 409) {
-        db.setIdentity("conwayRegistrationStatus", "conflict");
-        logger.warn(`[${new Date().toISOString()}] Automaton identity conflict: ${err.message}`);
-      } else {
-        db.setIdentity("conwayRegistrationStatus", "failed");
-        logger.warn(`[${new Date().toISOString()}] Automaton identity registration failed: ${err.message}`);
-      }
-    }
+    // Local registration — no API call. Just persist the identity.
+    db.setIdentity("conwayRegistrationStatus", "registered");
+    db.setKV("genesis_prompt_hash", config.genesisPrompt
+      ? keccak256(toHex(config.genesisPrompt))
+      : "");
+    logger.info(`[${new Date().toISOString()}] Automaton identity registered (sovereign).`);
   }
 
   // Resolve Ollama base URL: env var takes precedence over config
   const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || config.ollamaBaseUrl;
 
-  // Create inference client — pass a live registry lookup so model names like
-  // "gpt-oss:120b" route to Ollama based on their registered provider, not heuristics.
+  // Create inference client — sovereign mode uses DO Inference via env vars
+  // DO_API_KEY and DO_BASE_URL env vars trigger do_inference backend
+  const inferenceApiUrl = process.env.DO_BASE_URL || config.conwayApiUrl.replace(/\/$/, "");
+  const inferenceApiKey = process.env.DO_API_KEY || apiKey;
   const modelRegistry = new ModelRegistry(db.raw);
   modelRegistry.initialize();
   const inference = createInferenceClient({
-    apiUrl: config.conwayApiUrl,
-    apiKey,
-    defaultModel: config.inferenceModel,
+    apiUrl: inferenceApiUrl,
+    apiKey: inferenceApiKey,
+    defaultModel: process.env.DO_INFERENCE_MODEL || config.inferenceModel,
     maxTokens: config.maxTokensPerTurn,
     lowComputeModel: config.modelStrategy?.lowComputeModel || "gpt-5-mini",
     openaiApiKey: config.openaiApiKey,
@@ -336,37 +321,10 @@ async function run(): Promise<void> {
     logger.warn(`[${new Date().toISOString()}] State repo init failed: ${err.message}`);
   }
 
-  // Bootstrap topup: buy minimum credits ($5) from USDC so the agent can start.
-  // The agent decides larger topups itself via the topup_credits tool.
-  try {
-    let bootstrapTimer: ReturnType<typeof setTimeout>;
-    const bootstrapTimeout = new Promise<null>((_, reject) => {
-      bootstrapTimer = setTimeout(() => reject(new Error("bootstrap topup timed out")), 15_000);
-    });
-    try {
-      await Promise.race([
-        (async () => {
-          const creditsCents = await conway.getCreditsBalance().catch(() => 0);
-          const topupResult = await bootstrapTopup({
-            apiUrl: config.conwayApiUrl,
-            account,
-            creditsCents,
-            chainType: resolvedChainType,
-          });
-          if (topupResult?.success) {
-            logger.info(
-              `[${new Date().toISOString()}] Bootstrap topup: +$${topupResult.amountUsd} credits from USDC`,
-            );
-          }
-        })(),
-        bootstrapTimeout,
-      ]);
-    } finally {
-      clearTimeout(bootstrapTimer!);
-    }
-  } catch (err: any) {
-    logger.warn(`[${new Date().toISOString()}] Bootstrap topup skipped: ${err.message}`);
-  }
+  // Sovereign mode: initialize local credits from SQLite (no Conway Cloud topup)
+  // Credits start at 0; earnings accumulate via the financial state check
+  const creditsCents = 0;
+  logger.info(`[${new Date().toISOString()}] Local credits initialized: $${(creditsCents / 100).toFixed(2)}`);
 
   // Start heartbeat daemon (Phase 1.1: DurableScheduler)
   const heartbeat = createHeartbeatDaemon({

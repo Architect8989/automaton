@@ -31,7 +31,7 @@ interface InferenceClientOptions {
   getModelProvider?: (modelId: string) => string | undefined;
 }
 
-type InferenceBackend = "conway" | "openai" | "anthropic" | "ollama";
+type InferenceBackend = "conway" | "openai" | "anthropic" | "ollama" | "do_inference";
 
 function isLoopbackHttpUrl(url: string | undefined): boolean {
   if (!url) return false;
@@ -110,6 +110,19 @@ export function createInferenceClient(
       });
     }
 
+    if (backend === "do_inference") {
+      const doBaseUrl = process.env.DO_BASE_URL || "https://inference.do-ai.run/v1";
+      const doApiKey = process.env.DO_API_KEY || apiKey;
+      return chatViaOpenAiCompatible({
+        model,
+        body,
+        apiUrl: doBaseUrl,
+        apiKey: doApiKey,
+        backend: "do_inference",
+        httpClient,
+      });
+    }
+
     const openAiLikeApiUrl =
       backend === "openai" ? "https://api.openai.com" :
       backend === "ollama" ? (ollamaBaseUrl as string).replace(/\/$/, "") :
@@ -183,6 +196,9 @@ function resolveInferenceBackend(
     getModelProvider?: (modelId: string) => string | undefined;
   },
 ): InferenceBackend {
+  // DO Inference sovereign override: if DO_API_KEY is set, always use DO Inference
+  if (process.env.DO_API_KEY) return "do_inference";
+
   // Registry-based routing: most accurate, no name guessing
   if (keys.getModelProvider) {
     const provider = keys.getModelProvider(model);
@@ -205,7 +221,7 @@ async function chatViaOpenAiCompatible(params: {
   body: Record<string, unknown>;
   apiUrl: string;
   apiKey: string;
-  backend: "conway" | "openai" | "ollama";
+  backend: "conway" | "openai" | "ollama" | "do_inference";
   httpClient: ResilientHttpClient;
 }): Promise<InferenceResponse> {
   const resp = await params.httpClient.request(`${params.apiUrl}/v1/chat/completions`, {
@@ -213,7 +229,7 @@ async function chatViaOpenAiCompatible(params: {
     headers: {
       "Content-Type": "application/json",
       Authorization:
-        params.backend === "openai" || params.backend === "ollama"
+        params.backend === "openai" || params.backend === "ollama" || params.backend === "do_inference"
           ? `Bearer ${params.apiKey}`
           : params.apiKey,
     },

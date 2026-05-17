@@ -29,6 +29,8 @@ import type { Address, PrivateKeyAccount } from "viem";
 import { randomUUID } from "crypto";
 import type { ChainType, ChainIdentity } from "../identity/chain.js";
 
+export type { ConwayClient };
+
 interface ConwayClientOptions {
   apiUrl: string;
   apiKey: string;

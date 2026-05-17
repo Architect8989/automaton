@@ -173,6 +173,13 @@ export const DEFAULT_ROUTING_MATRIX: RoutingMatrix = {
     summarization: { candidates: [], maxTokens: 0, ceilingCents: 0 },
     planning: { candidates: [], maxTokens: 0, ceilingCents: 0 },
   },
+  infant: {
+    agent_turn: { candidates: ["deepseek-v4-pro"], maxTokens: 2048, ceilingCents: 5 },
+    heartbeat_triage: { candidates: ["deepseek-v4-pro"], maxTokens: 512, ceilingCents: 1 },
+    safety_check: { candidates: ["deepseek-v4-pro"], maxTokens: 1024, ceilingCents: 2 },
+    summarization: { candidates: ["deepseek-v4-pro"], maxTokens: 1024, ceilingCents: 3 },
+    planning: { candidates: ["deepseek-v4-pro"], maxTokens: 1024, ceilingCents: 3 },
+  },
 };
 
 // === Default Model Strategy Config ===
